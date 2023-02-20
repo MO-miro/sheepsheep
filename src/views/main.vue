@@ -2,7 +2,7 @@
   <div class="bg"></div>
   <div class="settings">
     <Icon name="replay" @click="restart" />
-    <!-- <Icon name="setting" @click="handleSetting"/> -->
+    <Icon name="setting" @click="showSetting = true"/>
   </div>
   <div class="box">
     <div class="app">
@@ -44,6 +44,39 @@
           </div>
         </div>
       </Overlay>
+      <Dialog v-model:show="showSetting" closeOnClickOverlay confirm-button-text="重新开始" show-cancel-button @confirm="restart">
+        <div class="setting-wrapper" @click.stop>
+          <Form @submit="onSubmit">
+            <CellGroup inset>
+              <Field name="level" label="等级">
+                <template #input>
+                  <Stepper v-model="options.level" min="1" max="10"  theme="round"/>
+                </template>
+              </Field>
+              <Field name="range0" label="最大范围(起)">
+                <template #input>
+                  <Stepper v-model="options.range[0]" min="0" max="8" theme="round" />
+                </template>
+              </Field>
+              <Field name="range1" label="最大范围(止)">
+                <template #input>
+                  <Stepper v-model="options.range[1]" min="0" max="8" theme="round" />
+                </template>
+              </Field>
+               <Field name="minRange0" label="最小范围(起)">
+                <template #input>
+                  <Stepper v-model="options.minRange[0]" min="0" max="8" theme="round" />
+                </template>
+              </Field>
+              <Field name="minRange1" label="最小范围(止)">
+                <template #input>
+                  <Stepper v-model="options.minRange[1]" min="0" max="8" theme="round" />
+                </template>
+              </Field>
+            </CellGroup>
+          </Form>
+        </div>
+      </Dialog>
     </div>
   </div>
 </template>
@@ -51,18 +84,19 @@
 <script setup>
 import { ref, watchEffect } from "vue";
 import { v4 as uuid } from 'uuid';
-import { Button, Icon,Overlay } from 'vant';
+import { Button, Icon, Overlay, Form, Field, CellGroup, Stepper, Dialog } from 'vant';
 import 'vant/lib/index.css';
 
-const options = {
+const options = ref({
   iconLength: 15,
   level: 3,
   range: [0, 8],
   minRange: [4, 5],
   offsetPool:[0, 50, -50] // 偏移量取值范围
-}
+})
+
 const initCards = (options) => {
-  const {level, range, iconLength, offsetPool, minRange } = options
+  const {level, range, iconLength, offsetPool, minRange } = options.value
   const cards = [];
   const randomSet = (level) => {
     const cardNums = level * 3 * iconLength;
@@ -100,9 +134,9 @@ const initCards = (options) => {
       // 如果范围长度需要增加，则计算分curRange[0]、curRange[1]分别应改变多少 => 因为每次循环都计算，所以范围增加的总值一定是1，也就是curRange[0]--或curRange[1]++
       if (newRangeLen > rangeLen){
         if((Math.random() > 0.5 && curRange[0] - 1 >= 0) || curRange[1] + 1 > range[1]){
-          curRange[0] --
+          curRange = [curRange[0] - 1, curRange[1]]
         } else {
-          curRange[1] ++
+          curRange = [curRange[0], curRange[1] + 1]
         }
       }
     }
@@ -119,7 +153,7 @@ const waitTimeout = (timeout) => {
   });
 };
 
-// const options =
+
 const cards = ref(initCards(options)); // 元数据
 const level = ref(1); // 等级
 const queue = ref([]); // 下方选中数据
@@ -127,6 +161,7 @@ const sortedQueue = ref({}); // 排序后的x坐标
 const finished = ref(false); // 是否完成
 const tipText = ref(""); // 提示
 const animating = ref(false); // 选择的元素正在加入队列区
+const showSetting = ref(false);
 
 // 检查是否被覆盖
 const checkCover = (cards) => {
@@ -159,7 +194,7 @@ const checkCover = (cards) => {
 
 // 移出道具
 const moveOut = () => {
-  // 如果选中队列中少于3条数据那么就退出
+  // 如果选中队列中少于3条则不生效
   if (queue.value.length < 3) return;
   const updateQueue = queue.value.slice();
   updateQueue.sort((a,b) => sortedQueue.value[a.id] - sortedQueue.value[b.id])
@@ -190,6 +225,7 @@ const undo = () => {
 
 // 洗牌道具
 const wash = () => {
+  const { iconLength }= options.value
   // 队列区的牌不洗
   let iconPool = [];
   const queueIconMap = {}
@@ -208,9 +244,10 @@ const wash = () => {
   const restCardNum = cards.value.filter(item => item.status === 0).length;
   const fillNum = (restCardNum - iconPool.length) / 3;
   for (let i = 0; i < fillNum; i++) {
-    const curIconIdx = 1 + Math.floor(options.iconLength * Math.random())
+    const curIconIdx = 1 + Math.floor(iconLength * Math.random())
     iconPool = iconPool.concat(new Array(3).fill(curIconIdx))
   }
+  console.log(iconPool)
   const updateCards = []
   for (let item of cards.value) {
     if (item.status === 0) {
@@ -236,10 +273,10 @@ const restart = () => {
 
 // 选择卡片
 const chooseCard = async (idx) => {
-  // 游戏已完成/正在移动，直接return
+  // 游戏已完成/正在移动
   if (finished.value || animating.value) return;
   const cardItem = cards.value[idx];
-  // 被覆盖/不在牌堆区，直接return
+  // 被覆盖/不在牌堆区
   if (cardItem.isCover || cardItem.status !== 0) return;
   //置为可以选中状态
   cardItem.status = 1;
@@ -317,7 +354,8 @@ watchEffect(() => {
   width: 100vw;
   height: 100vh;
   position: relative;
-  max-width: 500px;
+  max-width: 700px;
+  overflow: hidden;
 }
 
 .bg {
@@ -338,7 +376,7 @@ watchEffect(() => {
   left: 0;
   bottom: 0;
   right: 0;
-  padding: 50px;
+  padding: 7%;
 }
 
 .settings{
@@ -446,5 +484,16 @@ watchEffect(() => {
 }
 .option-btn{
   width:30%;
+}
+
+.setting-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 1em 0;
+}
+.settings-btn{
+  width:100%;
 }
 </style>
