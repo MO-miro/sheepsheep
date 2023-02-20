@@ -1,7 +1,7 @@
 <template>
   <div class="bg"></div>
   <div class="settings">
-    <Icon name="replay" @click="restart" />
+    <Icon name="replay" @click="confirmRestart" />
     <Icon name="setting" @click="showSetting = true"/>
   </div>
   <div class="box">
@@ -14,9 +14,9 @@
             :key="item.id"
             :style="{
               transform: `translateX(${
-                item.status === 0 ? item.x : sortedQueue[item.id]
-              }%) translateY(${item.status === 0 ? item.y : 1000}%)`,
-              opacity: item.status < 2 ? 1 : 0,
+                item.status === STATUS.UNPICKED ? item.x : sortedQueue[item.id]
+              }%) translateY(${item.status === STATUS.UNPICKED ? item.y : 1000}%)`,
+              opacity: item.status !== STATUS.FINISHED ? 1 : 0,
             }"
             @click="chooseCard(index)"
           >
@@ -84,7 +84,7 @@
 <script setup>
 import { ref, watchEffect } from "vue";
 import { v4 as uuid } from 'uuid';
-import { Button, Icon, Overlay, Form, Field, CellGroup, Stepper, Dialog } from 'vant';
+import { Button, Icon, Overlay, Form, Field, CellGroup, Stepper, Dialog, showConfirmDialog } from 'vant';
 import 'vant/lib/index.css';
 
 const options = ref({
@@ -94,6 +94,12 @@ const options = ref({
   minRange: [4, 5],
   offsetPool:[0, 50, -50] // 偏移量取值范围
 })
+
+const STATUS = {
+  UNPICKED: 0,
+  IN_QUEUE: 1,
+  FINISHED: 2,
+}
 
 const initCards = (options) => {
   const {level, range, iconLength, offsetPool, minRange } = options.value
@@ -122,7 +128,7 @@ const initCards = (options) => {
       // 生成元数据对象
       cards.push({
         isCover: false, // 默认都是没有被覆盖的
-        status: 0, // 是否被选中的状态
+        status: STATUS.UNPICKED, // 未被选中
         icon: parseInt(iconIdx), // 图标
         id: uuid(), // 生成随机id
         x: column * 100 + offsetX, //x 坐标
@@ -170,7 +176,7 @@ const checkCover = (cards) => {
     const cur = updatecards[i];
     cur.isCover = false;
     //status=0的牌在牌堆区，不在牌堆区的牌不需要比较
-    if (cur.status !== 0) continue;
+    if (cur.status !== STATUS.UNPICKED) continue;
     // 拿到坐标
     const { x: x1, y: y1 } = cur;
     // 每个棋盘格即卡牌的宽高视为100，拿到对角坐标
@@ -179,7 +185,7 @@ const checkCover = (cards) => {
     // 判断其“上面”的卡片是否覆盖它
     for (let j = i + 1; j < updatecards.length; j++) {
       const compare = updatecards[j];
-      if (compare.status !== 0) continue;
+      if (compare.status !== STATUS.UNPICKED) continue;
       const { x, y } = compare;
       if (!(y + 100 <= y1 || y >= y2 || x + 100 <= x1 || x >= x2)) {
         cur.isCover = true;
@@ -203,8 +209,8 @@ const moveOut = () => {
     const find = cards.value.find((s) => s.id === moveOutCards[i].id);
    if (find) {
       // 移出到单独区域，无遮挡
-      find.status = 0;
-      find.x = 100 * (i + 2);
+      find.status = STATUS.UNPICKED;
+      find.x = 250 + 100 * i;
       find.y = 870;
    }
   }
@@ -219,7 +225,7 @@ const undo = () => {
   const cardItem = updateQueue.pop();
   if (!cardItem) return;
   queue.value = updateQueue;
-  cardItem.status = 0
+  cardItem.status =  STATUS.UNPICKED;
   checkCover(cards.value);
 };
 
@@ -241,16 +247,15 @@ const wash = () => {
     iconPool = iconPool.concat(new Array(3 - queueIconMap[icon]).fill(parseInt(icon)))
   }
   // 剩余牌（去除队列区和已匹配队列区的数量）重新赋予牌面，保证每种牌面数量都为3的倍数
-  const restCardNum = cards.value.filter(item => item.status === 0).length;
+  const restCardNum = cards.value.filter(item => item.status ===  STATUS.UNPICKED).length;
   const fillNum = (restCardNum - iconPool.length) / 3;
   for (let i = 0; i < fillNum; i++) {
     const curIconIdx = 1 + Math.floor(iconLength * Math.random())
     iconPool = iconPool.concat(new Array(3).fill(curIconIdx))
   }
-  console.log(iconPool)
   const updateCards = []
   for (let item of cards.value) {
-    if (item.status === 0) {
+    if (item.status === STATUS.UNPICKED) {
       updateCards.push({
         ...item,
         icon: iconPool.splice(Math.floor(iconPool.length * Math.random()), 1)[0]
@@ -271,15 +276,27 @@ const restart = () => {
   checkCover(cards.value);
 };
 
+const confirmRestart = () => {
+  showConfirmDialog({
+    message:
+      '您确定要重新开始游戏吗？',
+  })
+    .then(() => {
+      restart()
+    })
+    .catch(() => {
+    });
+}
+
 // 选择卡片
 const chooseCard = async (idx) => {
   // 游戏已完成/正在移动
   if (finished.value || animating.value) return;
   const cardItem = cards.value[idx];
   // 被覆盖/不在牌堆区
-  if (cardItem.isCover || cardItem.status !== 0) return;
+  if (cardItem.isCover || cardItem.status !== STATUS.UNPICKED) return;
   //置为可以选中状态
-  cardItem.status = 1;
+  cardItem.status = STATUS.IN_QUEUE;
   queue.value.push(cardItem);
   // 防止点击
   animating.value = true;
@@ -295,7 +312,7 @@ const chooseCard = async (idx) => {
     for (const sb of filterSame) {
       const find = cards.value.find((i) => i.id === sb.id);
       // 将他们的状态变为2 通过opacity 属性 来隐藏icon
-      if (find) find.status = 2;
+      if (find) find.status = STATUS.FINISHED;
     }
   }
 
@@ -307,7 +324,7 @@ const chooseCard = async (idx) => {
     return;
   }
   // 所有cards的status置为2，完成挑战
-  if (!cards.value.find((c) => c.status !== 2)) {
+  if (!cards.value.find((c) => c.status !== STATUS.FINISHED)) {
     tipText.value = '完成挑战';
     finished.value = true;
     animating.value = false;
@@ -348,13 +365,18 @@ watchEffect(() => {
   checkCover(cards.value);
 });
 </script>
+
 <style>
+html,body{
+  height: 100%;
+  width: 100%;
+}
 #app {
   text-align: center;
-  width: 100vw;
-  height: 100vh;
+  height: 100%;
+  width: 100%;
   position: relative;
-  max-width: 700px;
+  max-width: 600px;
   overflow: hidden;
 }
 
@@ -384,18 +406,16 @@ watchEffect(() => {
   line-height: 2em;
   font-size: 1.5em;
   z-index: 2;
-  z-index: 2;
   position: absolute;
   right: 0.5em;
 }
 
 .settings > i:hover{
   cursor: pointer;
-  color:#999;
 }
 
 .settings > i:not(:last-child){
-  margin-right: 0.2em;
+  margin-right: 0.5em;
   
 }
 
@@ -462,8 +482,6 @@ watchEffect(() => {
   align-items: center;
 }
 
-
-
 .modal {
   height: 100%;
   width:100%;
@@ -493,6 +511,7 @@ watchEffect(() => {
   height: 100%;
   margin: 1em 0;
 }
+
 .settings-btn{
   width:100%;
 }
