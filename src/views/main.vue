@@ -1,4 +1,4 @@
-<template>
+ <template>
   <div class="bg"></div>
   <div class="settings">
     <Icon name="replay" @click="confirmRestart" />
@@ -14,16 +14,17 @@
             :key="item.id"
             :style="{
               transform: `translateX(${
-                item.status === STATUS.UNPICKED ? item.x : sortedQueue[item.id]
-              }%) translateY(${item.status === STATUS.UNPICKED ? item.y : 1000}%)`,
+                item.status === STATUS.UNPICKED || item.status === STATUS.MOVE_OUT ? item.x : sortedQueue[item.id]
+              }%) translateY(${item.status === STATUS.UNPICKED || item.status === STATUS.MOVE_OUT ? item.y : 1000}%)`,
               opacity: item.status !== STATUS.FINISHED ? 1 : 0,
+              zIndex: item.status === STATUS.MOVE_OUT ? moveOutSequence[item.id] : undefined,
             }"
             @click="chooseCard(index)"
           >
             <div
               class="cardItem-inner"
             >
-              <img style="width: 100%" :src="`/src/assets/icons/${item.icon}.png`" alt="" />
+              <img style="width: 100%" :src="getCardSrc(item.icon)" alt="" />
             </div>
           </div>
         </div>
@@ -46,31 +47,30 @@
       </Overlay>
       <Dialog v-model:show="showSetting" closeOnClickOverlay confirm-button-text="重新开始" show-cancel-button @confirm="restart">
         <div class="setting-wrapper" @click.stop>
-          <Form @submit="onSubmit">
+          <Form>
             <CellGroup inset>
               <Field name="level" label="等级">
                 <template #input>
                   <Stepper v-model="options.level" min="1" max="10"  theme="round"/>
                 </template>
-              </Field>
-              <Field name="range0" label="最大范围(起)">
-                <template #input>
-                  <Stepper v-model="options.range[0]" min="0" max="8" theme="round" />
+                <template #extra>
+                  <span class="extra">牌数:{{options.level * 3 * 15}}</span>
                 </template>
               </Field>
-              <Field name="range1" label="最大范围(止)">
+              <Field name="range" label="最大范围">
                 <template #input>
-                  <Stepper v-model="options.range[1]" min="0" max="8" theme="round" />
+                  <Slider v-model="options.range" min="0" max="8" range step="1" />
+                </template>
+                <template #extra>
+                  <span class="extra">{{options.range[0]}}-{{options.range[1]}}</span>
                 </template>
               </Field>
-               <Field name="minRange0" label="最小范围(起)">
+              <Field name="minRange" label="最小范围">
                 <template #input>
-                  <Stepper v-model="options.minRange[0]" min="0" max="8" theme="round" />
+                  <Slider v-model="options.minRange" min="0" max="8" range step="1" />
                 </template>
-              </Field>
-              <Field name="minRange1" label="最小范围(止)">
-                <template #input>
-                  <Stepper v-model="options.minRange[1]" min="0" max="8" theme="round" />
+                <template #extra>
+                  <span class="extra">{{options.minRange[0]}}-{{options.minRange[1]}}</span>
                 </template>
               </Field>
             </CellGroup>
@@ -84,7 +84,7 @@
 <script setup>
 import { ref, watchEffect } from "vue";
 import { v4 as uuid } from 'uuid';
-import { Button, Icon, Overlay, Form, Field, CellGroup, Stepper, Dialog, showConfirmDialog } from 'vant';
+import { Button, Icon, Overlay, Form, Field, CellGroup, Stepper, Dialog, Slider, showConfirmDialog } from 'vant';
 import 'vant/lib/index.css';
 
 const options = ref({
@@ -99,7 +99,15 @@ const STATUS = {
   UNPICKED: 0,
   IN_QUEUE: 1,
   FINISHED: 2,
+  MOVE_OUT: 3,
 }
+
+const getCardSrc = (name) => {
+  if (typeof name === "undefined") return "error.png";
+  const path = `/src/assets/icons/${name}.png`;
+  const modules = import.meta.globEager("/src/assets/icons/*");
+  return modules[path]?.default;
+};
 
 const initCards = (options) => {
   const {level, range, iconLength, offsetPool, minRange } = options.value
@@ -161,8 +169,9 @@ const waitTimeout = (timeout) => {
 
 
 const cards = ref(initCards(options)); // 元数据
-const level = ref(1); // 等级
 const queue = ref([]); // 下方选中数据
+const moveOutNums = ref(0)
+const moveOutSequence = ref({})
 const sortedQueue = ref({}); // 排序后的x坐标
 const finished = ref(false); // 是否完成
 const tipText = ref(""); // 提示
@@ -209,9 +218,10 @@ const moveOut = () => {
     const find = cards.value.find((s) => s.id === moveOutCards[i].id);
    if (find) {
       // 移出到单独区域，无遮挡
-      find.status = STATUS.UNPICKED;
+      find.status = STATUS.MOVE_OUT;
       find.x = 250 + 100 * i;
       find.y = 870;
+      moveOutSequence.value[find.id] = moveOutNums.value++
    }
   }
   queue.value = updateQueue;
@@ -219,7 +229,7 @@ const moveOut = () => {
 
 // 撤销道具
 const undo = () => {
-  // 放回原来位置
+  // 将队列中的牌放回原来位置
   if (!queue.value.length) return;
   const updateQueue = queue.value.slice();
   const cardItem = updateQueue.pop();
@@ -232,19 +242,23 @@ const undo = () => {
 // 洗牌道具
 const wash = () => {
   const { iconLength }= options.value
-  // 队列区的牌不洗
+  // 队列区和移出区域的牌不洗
   let iconPool = [];
-  const queueIconMap = {}
-  for (let queueItem of queue.value) {
-    if (!queueIconMap[queueItem.icon]) {
-      queueIconMap[queueItem.icon] = 1
+  const fixedIconMap = {}
+  const fixedList = queue.value.slice()
+  for(let id in moveOutSequence.value){
+    fixedList.push(cards.value.find(i => i.id === id))
+  }
+  for (let queueItem of fixedList) {
+    if (!fixedIconMap[queueItem.icon]) {
+      fixedIconMap[queueItem.icon] = 1
     } else {
-      queueIconMap[queueItem.icon]++
+      fixedIconMap[queueItem.icon]++
     }
   }
    // 匹配队列区的牌面，保证可以消除
-  for (let icon in queueIconMap) {
-    iconPool = iconPool.concat(new Array(3 - queueIconMap[icon]).fill(parseInt(icon)))
+  for (let icon in fixedIconMap) {
+    iconPool = iconPool.concat(new Array(3 - fixedIconMap[icon]).fill(parseInt(icon)))
   }
   // 剩余牌（去除队列区和已匹配队列区的数量）重新赋予牌面，保证每种牌面数量都为3的倍数
   const restCardNum = cards.value.filter(item => item.status ===  STATUS.UNPICKED).length;
@@ -273,6 +287,8 @@ const restart = () => {
   finished.value = false;
   queue.value = [];
   cards.value = initCards(options)
+  moveOutNums.value = 0
+  moveOutSequence.value = {}
   checkCover(cards.value);
 };
 
@@ -294,7 +310,7 @@ const chooseCard = async (idx) => {
   if (finished.value || animating.value) return;
   const cardItem = cards.value[idx];
   // 被覆盖/不在牌堆区
-  if (cardItem.isCover || cardItem.status !== STATUS.UNPICKED) return;
+  if (cardItem.isCover || cardItem.status === STATUS.FINISHED || cardItem === STATUS.IN_QUEUE) return;
   //置为可以选中状态
   cardItem.status = STATUS.IN_QUEUE;
   queue.value.push(cardItem);
@@ -376,7 +392,7 @@ html,body{
   height: 100%;
   width: 100%;
   position: relative;
-  max-width: 600px;
+  max-width: 500px;
   overflow: hidden;
 }
 
@@ -514,5 +530,12 @@ html,body{
 
 .settings-btn{
   width:100%;
+}
+
+.van-dialog, .van-form{
+  width: 100%;
+}
+.extra{
+  margin-left: 1em;
 }
 </style>
