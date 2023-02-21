@@ -310,7 +310,7 @@ const chooseCard = async (idx) => {
   if (finished.value || animating.value) return;
   const cardItem = cards.value[idx];
   // 被覆盖/不在牌堆区
-  if (cardItem.isCover || cardItem.status === STATUS.FINISHED || cardItem === STATUS.IN_QUEUE) return;
+  if (cardItem.isCover || cardItem.status === STATUS.FINISHED || cardItem.status === STATUS.IN_QUEUE) return;
   //置为可以选中状态
   cardItem.status = STATUS.IN_QUEUE;
   queue.value.push(cardItem);
