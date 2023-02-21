@@ -15,7 +15,7 @@
             :style="{
               transform: `translateX(${
                 item.status === STATUS.UNPICKED || item.status === STATUS.MOVE_OUT ? item.x : sortedQueue[item.id]
-              }%) translateY(${item.status === STATUS.UNPICKED || item.status === STATUS.MOVE_OUT ? item.y : 1000}%)`,
+              }%) translateY(${item.status === STATUS.UNPICKED || item.status === STATUS.MOVE_OUT ? item.y : 856}%)`,
               opacity: item.status !== STATUS.FINISHED ? 1 : 0,
               zIndex: item.status === STATUS.MOVE_OUT ? moveOutSequence[item.id] : undefined,
             }"
@@ -59,7 +59,7 @@
               </Field>
               <Field name="range" label="最大范围">
                 <template #input>
-                  <Slider v-model="options.range" min="0" max="8" range step="1" />
+                  <Slider v-model="options.range" :min="RANGE_OPTION.min" :max="RANGE_OPTION.max" range step="1" />
                 </template>
                 <template #extra>
                   <span class="extra">{{options.range[0]}}-{{options.range[1]}}</span>
@@ -67,7 +67,7 @@
               </Field>
               <Field name="minRange" label="最小范围">
                 <template #input>
-                  <Slider v-model="options.minRange" min="0" max="8" range step="1" />
+                  <Slider v-model="options.minRange" :min="RANGE_OPTION.min" :max="RANGE_OPTION.max" range step="1" />
                 </template>
                 <template #extra>
                   <span class="extra">{{options.minRange[0]}}-{{options.minRange[1]}}</span>
@@ -87,12 +87,18 @@ import { v4 as uuid } from 'uuid';
 import { Button, Icon, Overlay, Form, Field, CellGroup, Stepper, Dialog, Slider, showConfirmDialog } from 'vant';
 import 'vant/lib/index.css';
 
+const RANGE_OPTION = {
+    min: 0,
+    max: 6
+}
+
 const options = ref({
   iconLength: 15,
   level: 3,
-  range: [0, 8],
-  minRange: [4, 5],
-  offsetPool:[0, 50, -50] // 偏移量取值范围
+  range: [0, 6],
+  minRange: [4, 4],
+  offsetPool:[0, 50, -50], // 偏移量取值范围
+  
 })
 
 const STATUS = {
@@ -219,8 +225,8 @@ const moveOut = () => {
    if (find) {
       // 移出到单独区域，无遮挡
       find.status = STATUS.MOVE_OUT;
-      find.x = 250 + 100 * i;
-      find.y = 870;
+      find.x = 150 + 100 * i;
+      find.y = 730;
       moveOutSequence.value[find.id] = moveOutNums.value++
    }
   }
@@ -368,7 +374,7 @@ watchEffect(() => {
     }
   }
   const updateSortedQueue = {};
-  let x = 50;
+  let x = -35; // 坐标起始值
   // 拿到更新后的队列区数据，计算坐标
   for (const cardItem of temp) {
     // 坐标
@@ -441,10 +447,10 @@ html,body{
 }
 
 .cards-container {
-  width: 100%;
-  padding-bottom: 100%;
+  width: 90%;
+  padding-bottom: 90%;
   position: relative;
-  margin:12.5% 0 25% 0;
+  margin: 16% auto 32%;
 }
 
 .cards-inner {
@@ -457,8 +463,8 @@ html,body{
 }
 
 .cardItem {
-  width: 12.5%;
-  padding-bottom: 12.5%;
+  width: 16%;
+  padding-bottom: 16%;
   position: absolute;
   transition: 0.3s;
   left: 0;
@@ -486,11 +492,10 @@ html,body{
 
 .queue-container {
   border-radius: 8px;
-  width: 100%;
-  padding-bottom: 15%;
+  /* width: 100%; */
+  padding-bottom: 16%;
   border: 2px solid gray;
-  margin-top:-5px;
-  margin-bottom: 16px;
+  margin: 0 -5% 16px;
   box-sizing: border-box;
   display: flex;
   gap: 8px;
@@ -534,6 +539,9 @@ html,body{
 
 .van-dialog, .van-form{
   width: 100%;
+}
+.van-overlay{
+  z-index: 200;
 }
 .extra{
   margin-left: 1em;
